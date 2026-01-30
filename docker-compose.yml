@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  subtitle-studio:
+    image: subtitle-studio-pro:latest
+    build: .
+    container_name: subtitle-studio-pro
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./data:/app/data # Optional persistence if backend added later
+    labels:
+      - "casaos.app.name=Altyazı Stüdyosu Pro"
+      - "casaos.app.icon=https://cdn-icons-png.flaticon.com/512/2920/2920329.png"
+      - "casaos.app.description=Yapay zeka destekli profesyonel altyazı çeviri aracı."
+      - "casaos.app.category=Productivity"
