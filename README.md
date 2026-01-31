@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Altyazı Stüdyosu Pro
 
-# Run and deploy your AI Studio app
+Yapay zeka destekli, profesyonel altyazı çeviri ve düzenleme aracı.
 
-This contains everything you need to run your app locally.
+## 🚀 Kurulum ve Çalıştırma
 
-View your app in AI Studio: https://ai.studio/apps/drive/1yaz8t0ke6gR8RGTXv6-SUJjUFX4BjOSq
+### Geliştirme Ortamı (Bilgisayarınız)
+1. Kodları düzenleyin.
+2. Değişiklikleri gönderin:
+   ```bash
+   git add .
+   git commit -m "Yeni özellikler"
+   git push origin main
+   ```
 
-## Run Locally
+### Sunucu / CasaOS (Raspberry Pi)
+Bu işlemi **sadece bir kez** yapmanız gerekir:
+1. Terminali açın.
+2. Proje klasörüne gidin: `cd subtitle-studio`
+3. Güncelleme betiğine izin verin: `chmod +x update.sh`
 
-**Prerequisites:**  Node.js
+## 🔄 Nasıl Güncellenir?
 
+Geliştirme bilgisayarınızdan kodları `git push` ile gönderdikten sonra, Raspberry Pi terminalinde sadece şunu yazın:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+./update.sh
+```
+
+Bu komut:
+1. GitHub'dan son kodları çeker.
+2. Docker'ı günceller.
+3. Sistemi yeniden başlatır.
