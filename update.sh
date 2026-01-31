@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Hatalarda durma, elle yönetelim
+set +e
+
 # Renkler
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -12,15 +15,20 @@ echo -e "${YELLOW}🔄 PROJE GÜNCELLENİYOR...${NC}"
 echo -e "${YELLOW}🔗 REPO: ${REPO_URL}${NC}"
 echo -e "${YELLOW}==========================================${NC}"
 
+# Docker komutları için sudo gerekli mi?
+if [ "$EUID" -ne 0 ]; then
+    # Root değilsek Docker komutlarının başına sudo ekle
+    DOCKER="sudo docker"
+    COMPOSE="sudo docker-compose"
+else
+    # Zaten root isek gerek yok
+    DOCKER="docker"
+    COMPOSE="docker-compose"
+fi
+
 # Git kontrolü
 if ! command -v git &> /dev/null; then
     echo -e "${RED}HATA: Git yüklü değil. Lütfen 'sudo apt install git' ile yükleyin.${NC}"
-    exit 1
-fi
-
-# Docker kontrolü
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}HATA: docker-compose yüklü değil.${NC}"
     exit 1
 fi
 
@@ -48,12 +56,21 @@ echo -e "${YELLOW}==========================================${NC}"
 echo -e "${YELLOW}🐳 DOCKER KONTEYNERLERİ GÜNCELLENİYOR...${NC}"
 echo -e "${YELLOW}==========================================${NC}"
 
+# Docker kontrolü
+if ! command -v docker-compose &> /dev/null; then
+    echo -e "${RED}HATA: docker-compose yüklü değil.${NC}"
+    exit 1
+fi
+
 # Konteynerleri yeniden oluştur ve başlat
-docker-compose down
-docker-compose up -d --build --remove-orphans
+echo -e "Konteynerler durduruluyor..."
+$COMPOSE down
+
+echo -e "Yeniden başlatılıyor (Bu işlem biraz sürebilir)..."
+$COMPOSE up -d --build --remove-orphans
 
 echo -e "3. Temizlik yapılıyor..."
-docker image prune -f
+$DOCKER image prune -f
 
 echo -e ""
 echo -e "${GREEN}==========================================${NC}"
