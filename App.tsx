@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SubtitleFile, AppSettings, SubtitleCue, TimeCode, ProjectStats, TMDBContext } from './types';
+import { SubtitleFile, AppSettings, SubtitleCue, TimeCode, ProjectStats, TMDBContext } from './utils/types';
 import { parseSubtitleFile, serializeSubtitleFile } from './utils/parser';
 import { adjustTime } from './utils/time';
 import { translateText, translateBatch, refineText, analyzeProjectConsistency, analyzeIdioms } from './services/gemini';

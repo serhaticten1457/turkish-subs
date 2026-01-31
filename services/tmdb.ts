@@ -1,4 +1,4 @@
-import { TMDBContext } from "../types";
+import { TMDBContext } from "../utils/types";
 
 const BASE_URL = "https://api.themoviedb.org/3";
 

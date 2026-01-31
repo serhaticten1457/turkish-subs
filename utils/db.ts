@@ -1,4 +1,4 @@
-import { SubtitleFile } from '../types';
+import { SubtitleFile } from './types';
 
 const DB_NAME = 'SubtitleStudioDB';
 const DB_VERSION = 3; // Version bumped to add 'translation_memory'

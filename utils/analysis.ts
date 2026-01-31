@@ -1,4 +1,4 @@
-import { SubtitleCue } from '../types';
+import { SubtitleCue } from './types';
 
 export interface CueHealth {
   status: 'green' | 'yellow' | 'red';

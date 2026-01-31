@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { SubtitleCue, SubtitleFile, Idiom } from '../types';
+import { SubtitleCue, SubtitleFile, Idiom } from '../utils/types';
 import { formatTimeCode } from '../utils/time';
 import { analyzeCueHealth } from '../utils/analysis';
 

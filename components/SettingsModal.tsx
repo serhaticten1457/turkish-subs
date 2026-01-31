@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings } from '../types';
+import { AppSettings } from '../utils/types';
 
 interface SettingsModalProps {
   isOpen: boolean;

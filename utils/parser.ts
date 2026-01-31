@@ -1,4 +1,4 @@
-import { SubtitleCue, SubtitleFile } from '../types';
+import { SubtitleCue, SubtitleFile } from './types';
 import { parseTimeCode, formatTimeCode } from './time';
 
 // Polyfill for crypto.randomUUID in insecure contexts (HTTP)

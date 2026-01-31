@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Idiom } from "../types";
+import { Idiom } from "../utils/types";
 
 // Helper to clean Markdown code blocks from JSON response
 const cleanJsonOutput = (text: string): string => {

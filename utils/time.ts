@@ -1,4 +1,4 @@
-import { TimeCode } from '../types';
+import { TimeCode } from './types';
 
 export const parseTimeCode = (timeString: string, format: 'srt' | 'vtt'): TimeCode => {
   // SRT: 00:00:20,000
