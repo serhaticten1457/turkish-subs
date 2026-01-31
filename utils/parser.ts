@@ -1,6 +1,23 @@
 import { SubtitleCue, SubtitleFile } from '../types';
 import { parseTimeCode, formatTimeCode } from './time';
 
+// Polyfill for crypto.randomUUID in insecure contexts (HTTP)
+const generateUUID = (): string => {
+  // Check if crypto.randomUUID is supported and available
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+  } catch(e) {}
+  
+  // Fallback for insecure contexts (HTTP on LAN)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 export const parseSubtitleFile = async (file: File): Promise<SubtitleFile> => {
   const text = await file.text();
   const isVtt = file.name.endsWith('.vtt');
@@ -26,7 +43,7 @@ export const parseSubtitleFile = async (file: File): Promise<SubtitleFile> => {
       if (currentCue.startTime && textBuffer.length > 0) {
         cues.push({
             id: currentCue.id || cues.length + 1,
-            originalId: crypto.randomUUID(),
+            originalId: generateUUID(),
             startTime: currentCue.startTime!,
             endTime: currentCue.endTime!,
             originalText: textBuffer.join('\n'),
@@ -79,7 +96,7 @@ export const parseSubtitleFile = async (file: File): Promise<SubtitleFile> => {
   if (currentCue.startTime && textBuffer.length > 0) {
     cues.push({
         id: currentCue.id || cues.length + 1,
-        originalId: crypto.randomUUID(),
+        originalId: generateUUID(),
         startTime: currentCue.startTime!,
         endTime: currentCue.endTime!,
         originalText: textBuffer.join('\n'),
@@ -91,7 +108,7 @@ export const parseSubtitleFile = async (file: File): Promise<SubtitleFile> => {
   }
 
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     name: file.name,
     cues,
     progress: 0,

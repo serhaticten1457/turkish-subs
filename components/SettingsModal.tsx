@@ -10,8 +10,14 @@ interface SettingsModalProps {
   isAutomationActive: boolean;
 }
 
+// Minimal interface for File System Access API Handle
+interface DirectoryHandleWrapper {
+    name: string;
+    kind: 'file' | 'directory';
+}
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onSave, onStartAutomation, isAutomationActive }) => {
-  const [localSettings, setLocalSettings] = React.useState<AppSettings>(settings);
+  const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [activeTab, setActiveTab] = useState<'api' | 'style' | 'glossary' | 'automation'>('api');
   
   // Glossary local state
@@ -19,8 +25,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
   const [newTermVal, setNewTermVal] = useState('');
 
   // Automation Handles (Temporary state before passing to App)
-  const [inputHandle, setInputHandle] = useState<any>(null);
-  const [outputHandle, setOutputHandle] = useState<any>(null);
+  const [inputHandle, setInputHandle] = useState<DirectoryHandleWrapper | null>(null);
+  const [outputHandle, setOutputHandle] = useState<DirectoryHandleWrapper | null>(null);
 
   React.useEffect(() => {
     setLocalSettings(settings);
@@ -47,19 +53,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       setLocalSettings(prev => ({ ...prev, glossary: updated }));
   };
 
+  const checkFileSystemSupport = () => {
+      // @ts-ignore
+      if (!window.showDirectoryPicker) {
+          alert("⚠️ Tarayıcınız veya bağlantınız bu özelliği desteklemiyor.\n\nKlasör seçimi (File System Access API) sadece HTTPS bağlantılarda veya 'localhost' üzerinde çalışır.\n\nEğer IP adresi (192.168.x.x) ile bağlanıyorsanız, tarayıcı güvenlik sebebiyle bu özelliği engeller.");
+          return false;
+      }
+      return true;
+  };
+
   const pickInputFolder = async () => {
+    if (!checkFileSystemSupport()) return;
     try {
-        // @ts-ignore - File System Access API
-        const handle = await window.showDirectoryPicker();
-        setInputHandle(handle);
+        const handle = await (window as any).showDirectoryPicker();
+        setInputHandle(handle as DirectoryHandleWrapper);
     } catch (e) { console.error(e); }
   };
 
   const pickOutputFolder = async () => {
+    if (!checkFileSystemSupport()) return;
     try {
-        // @ts-ignore
-        const handle = await window.showDirectoryPicker();
-        setOutputHandle(handle);
+        const handle = await (window as any).showDirectoryPicker();
+        setOutputHandle(handle as DirectoryHandleWrapper);
     } catch (e) { console.error(e); }
   };
 
@@ -274,7 +289,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                         <p className="text-[10px] text-slate-500 mt-2">
                             {localSettings.batchSize > 1 
                                 ? <span className="text-amber-600">⚠️ Toplu çeviri modunda bağlam penceresi devre dışıdır.</span>
-                                : "Mevcut satır çevrilirken AI'ya önceki ve sonraki satırları gösterir."
+                                : <span>Mevcut satır çevrilirken AI'ya önceki ve sonraki satırları gösterir.</span>
                             }
                         </p>
                     </div>
@@ -313,7 +328,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                         )}
                         {Object.entries(localSettings.glossary).map(([key, val]) => (
                             <div key={key} className="flex justify-between items-center p-2 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-white dark:hover:bg-slate-800 rounded">
-                                <span className="text-sm font-mono"><span className="text-blue-500">{key}</span> <span className="text-slate-400">→</span> <span className="text-green-500">{val}</span></span>
+                                <span className="text-sm font-mono"><span className="text-blue-500">{key}</span> <span className="text-slate-400">→</span> <span className="text-green-500">{String(val)}</span></span>
                                 <button onClick={() => removeGlossaryTerm(key)} className="text-slate-400 hover:text-red-500">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
@@ -350,7 +365,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 {inputHandle ? (
                                     <>
                                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                        <span>Klasör Seçildi: {String(inputHandle.name)}</span>
+                                        <span>Klasör Seçildi: {inputHandle.name}</span>
                                     </>
                                 ) : (
                                     <>
@@ -370,7 +385,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                 {outputHandle ? (
                                     <>
                                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                        <span>Klasör Seçildi: {String(outputHandle.name)}</span>
+                                        <span>Klasör Seçildi: {outputHandle.name}</span>
                                     </>
                                 ) : (
                                     <>
@@ -383,7 +398,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                     </div>
 
                     <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded text-xs text-amber-800 dark:text-amber-200">
-                        ⚠️ Bu özellik tarayıcınızın "Dosya Sistemi Erişim API"sini kullanır. Sekme kapatılırsa izleme durur.
+                        ⚠️ Bu özellik (Otomasyon) tarayıcınızın güvenlik kısıtlamaları nedeniyle sadece HTTPS veya Localhost üzerinde çalışır. Eğer butona basınca bir şey olmuyorsa bağlantınız güvenli değildir (IP ile bağlanıyorsunuzdur).
                     </div>
 
                     <button

@@ -1,19 +1,57 @@
-version: '3'
+version: '3.8'
 
 services:
-  subtitle-studio:
-    image: subtitle-studio-pro:latest
-    build: .
-    container_name: subtitle-studio-pro
+  # 1. Frontend (Vite Build + Nginx)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: subtitle-studio-web
     restart: unless-stopped
     ports:
-      - "3000:80"
-    environment:
-      - NODE_ENV=production
+      - "3005:80"
+      - "3443:443" # HTTPS Portu
     volumes:
-      - ./data:/app/data # Optional persistence if backend added later
+      - ./certs:/etc/nginx/certs # Sertifikaları içeri aktar
+    depends_on:
+      - api
+    networks:
+      - subtitle-net
     labels:
       - "casaos.app.name=Altyazı Stüdyosu Pro"
       - "casaos.app.icon=https://cdn-icons-png.flaticon.com/512/2920/2920329.png"
-      - "casaos.app.description=Yapay zeka destekli profesyonel altyazı çeviri aracı."
+      - "casaos.app.description=Yapay zeka destekli altyazı çeviri stüdyosu."
       - "casaos.app.category=Productivity"
+      - "casaos.app.index=/"
+
+  # 2. Backend (FastAPI)
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: subtitle-studio-api
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - subtitle-net
+
+  # 3. Cache (Redis)
+  redis:
+    image: redis:alpine
+    container_name: subtitle-studio-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - subtitle-net
+
+networks:
+  subtitle-net:
+    driver: bridge
+
+volumes:
+  redis_data:
