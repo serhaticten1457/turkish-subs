@@ -28,7 +28,7 @@ const validateResponse = (response: any) => {
   throw new Error("EMPTY_RESPONSE: Model boş yanıt döndürdü.");
 };
 
-const getSystemInstruction = (style: string, glossary: Record<string, string>, contextData: string = "") => {
+const getSystemInstruction = (style: string, glossary: Record<string, string>, styleGuide: string = "", contextData: string = "") => {
     let stylePrompt = "Doğal, akıcı ve günlük konuşma diline uygun Türkçe kullan.";
     
     switch (style) {
@@ -52,11 +52,17 @@ const getSystemInstruction = (style: string, glossary: Record<string, string>, c
         });
     }
 
+    let guidePrompt = "";
+    if (styleGuide && styleGuide.trim().length > 0) {
+        guidePrompt = `\nPROJE STİL REHBERİ VE KARAKTER ANALİZİ:\n${styleGuide}\n`;
+    }
+
     return `
     Sen profesyonel bir altyazı çevirmenisin.
     
     ÇEVİRİ TARZI: ${stylePrompt}
     ${contextData}
+    ${guidePrompt}
     ${glossaryPrompt}
     
     KURALLAR:
@@ -76,6 +82,7 @@ export const translateText = async (
   model: string,
   style: string = 'standard',
   glossary: Record<string, string> = {},
+  styleGuide: string = "",
   contextData: string = ""
 ): Promise<string> => {
   if (!apiKey) throw new Error("API_KEY_MISSING: Çeviri API anahtarı eksik.");
@@ -101,7 +108,7 @@ export const translateText = async (
       model: model,
       contents: prompt,
       config: {
-          systemInstruction: getSystemInstruction(style, glossary, contextData),
+          systemInstruction: getSystemInstruction(style, glossary, styleGuide, contextData),
           temperature: 0.3, // Lower temperature for consistency
       }
     });
@@ -118,6 +125,7 @@ export const translateBatch = async (
   model: string,
   style: string = 'standard',
   glossary: Record<string, string> = {},
+  styleGuide: string = "",
   contextData: string = ""
 ): Promise<string[]> => {
     if (!apiKey) throw new Error("API_KEY_MISSING");
@@ -140,7 +148,7 @@ export const translateBatch = async (
             model: model,
             contents: prompt,
             config: {
-                systemInstruction: getSystemInstruction(style, glossary, contextData),
+                systemInstruction: getSystemInstruction(style, glossary, styleGuide, contextData),
                 responseMimeType: "application/json",
             }
         });
@@ -208,36 +216,36 @@ export const refineText = async (
   }
 };
 
-export const extractGlossaryFromText = async (
+export const analyzeProjectConsistency = async (
     fullText: string,
     apiKey: string,
     model: string
-): Promise<Record<string, string>> => {
+): Promise<{ glossary: Record<string, string>, styleGuide: string }> => {
     if (!apiKey) throw new Error("API Key eksik");
 
     const ai = new GoogleGenAI({ apiKey });
     
     // Updated Logic: Gemini 1.5/2.0 Flash has massive context.
-    // We can send a huge amount of text. Let's limit to ~50k lines to be safe but allow whole episodes/seasons.
     const truncatedText = fullText.split('\n').slice(0, 50000).join('\n');
 
     const prompt = `
-    Bu bir film/dizi altyazı projesinin metin dökümüdür.
-    Görevin: Tüm bölümlerde tutarlılık sağlamak için bir "Karakter ve Terim Sözlüğü" (Glossary) oluşturmak.
+    Bu bir dizi/film altyazı projesinin metin dökümüdür.
+    Görevin: Sezon/Dizi genelinde tutarlılık sağlamak için bir "Sözlük" ve "Stil Rehberi" çıkarmak.
 
-    Aşağıdakileri tespit et ve JSON formatında çıkar:
-    1. Karakter İsimleri (Örn: "John" -> "John") - Asla değiştirme.
-    2. Rütbeler ve Unvanlar (Örn: "Commander" -> "Komutan", "Sensei" -> "Sensei") - Tutarlı olmalı.
-    3. Yer İsimleri (Örn: "Winterfell" -> "Winterfell", "King's Landing" -> "King's Landing").
-    4. Tekrarlanan Özel Terimler/Jargon.
-    5. Hitap Şekilleri (Karakterler birbirine "Sen" mi "Siz" mi diyor? Not olarak ekle veya yansıt).
+    Aşağıdakileri analiz et:
+    1. Karakter İsimleri ve Rütbeler (Değişmemesi gerekenler).
+    2. Özel Terimler/Jargon (Örn: "Winterfell", "Muggle").
+    3. Karakterlerin Konuşma Tarzları (Kim resmi, kim argo, kim aksanlı konuşuyor?).
+    4. Hitap Şekilleri (Sen/Siz kullanımı).
 
     ÇIKTI FORMATI (JSON Object):
     {
-      "John": "John",
-      "Commander": "Komutan",
-      "Highgarden": "Highgarden",
-      "You (to King)": "Siz"
+      "glossary": {
+          "John": "John",
+          "Commander": "Komutan",
+          "Highgarden": "Highgarden"
+      },
+      "styleGuide": "Önemli Notlar:\n- John karakteri çok resmi konuşur, daima 'Siz' dilini kullan.\n- Arya karakteri sokak ağzı ile konuşur.\n- Kışyarı terimi yerine orijinali Winterfell kullanılmalı."
     }
 
     METİN:
@@ -253,10 +261,14 @@ export const extractGlossaryFromText = async (
         
         const rawText = validateResponse(response);
         const jsonStr = cleanJsonOutput(rawText);
-        return JSON.parse(jsonStr);
+        const result = JSON.parse(jsonStr);
+        return {
+            glossary: result.glossary || {},
+            styleGuide: result.styleGuide || ""
+        };
     } catch (e) {
-        console.error("Glossary extraction failed", e);
-        return {};
+        console.error("Consistency analysis failed", e);
+        return { glossary: {}, styleGuide: "" };
     }
 }
 

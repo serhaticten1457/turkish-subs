@@ -32,6 +32,11 @@ class TranslationRequest(BaseModel):
     previous_lines: List[str] = []
     next_lines: List[str] = []
 
+class TMUpdateEntry(BaseModel):
+    text: str
+    translation: str
+    target_lang: str = "tr"
+
 class TranslationResponse(BaseModel):
     translated_text: str
     cached: bool
@@ -41,6 +46,21 @@ class TranslationResponse(BaseModel):
 @app.get("/")
 def read_root():
     return {"status": "ok", "service": "Subtitle Studio API"}
+
+@app.post("/tm")
+async def save_to_tm(entry: TMUpdateEntry):
+    """
+    Saves a user correction to the Redis Translation Memory.
+    """
+    success = await tm_service.save_manual_translation(
+        text=entry.text,
+        translation=entry.translation,
+        target_lang=entry.target_lang
+    )
+    if not success:
+        # Don't fail the request, just warn
+        return {"status": "warning", "message": "Failed to save to Redis"}
+    return {"status": "ok"}
 
 @app.post("/translate", response_model=TranslationResponse)
 async def translate_text(req: TranslationRequest):

@@ -195,6 +195,7 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
           const isActive = activeCueId === cue.originalId;
           const isError = cue.status === 'error';
           const health = analyzeCueHealth(cue);
+          const isTranslating = cue.status === 'translating' || cue.status === 'pending' || cue.status === 'refining' || cue.status === 'analyzing_idioms';
           
           let borderColorClass = "border-slate-200 dark:border-slate-800";
           let healthColorClass = "bg-green-500";
@@ -203,7 +204,7 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
           if (health.status === 'yellow') healthColorClass = "bg-yellow-500";
           
           if (isActive) borderColorClass = "border-blue-500 ring-1 ring-blue-500";
-          if (isError) borderColorClass = "border-red-500";
+          if (isError) borderColorClass = "border-red-500 bg-red-50/50 dark:bg-red-900/10";
 
           const currentText = cue.refinedText || cue.translatedText || "";
           const ghostText = (cue.refinedText && cue.translatedText !== cue.refinedText) ? cue.translatedText : null;
@@ -263,21 +264,49 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
                 </div>
 
                 {/* Target Text (Editable) */}
-                <div className="relative p-3 bg-white dark:bg-slate-900 group">
+                <div className="relative p-3 bg-white dark:bg-slate-900 group flex flex-col">
                     
-                    {/* "Redo Translation" Button (Top Right) */}
-                    {(cue.status === 'completed' || cue.status === 'translated' || cue.status === 'refining') && !isError && (
-                        <div className={`absolute top-2 right-2 z-20 transition-all duration-200 transform ${isActive || hoveredCueId === cue.originalId ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1 pointer-events-none'}`}>
+                    {/* Translation Source Badge (Top Right) */}
+                    {cue.translationSource && !isTranslating && !isError && (
+                         <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity">
+                             {cue.translationSource === 'tm' && (
+                                 <span className="text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-200 dark:border-green-800 flex items-center gap-1">
+                                     <span>🧠</span> TM
+                                 </span>
+                             )}
+                             {cue.translationSource === 'user' && (
+                                 <span className="text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                                     <span>✏️</span> ELLE
+                                 </span>
+                             )}
+                             {cue.translationSource === 'ai' && (
+                                 <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                     <span>🤖</span> AI
+                                 </span>
+                             )}
+                         </div>
+                    )}
+
+                    {/* "Redo Translation" Button (Visible ONLY on Hover & Idle) */}
+                    {hoveredCueId === cue.originalId && !isTranslating && (
+                        <div className="absolute top-2 right-14 z-30 animate-in fade-in duration-200">
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onRetryCue(cue.originalId);
                                 }}
-                                className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 hover:bg-blue-100 border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 dark:bg-slate-800 dark:hover:bg-blue-900/30 dark:border-slate-700 dark:hover:border-blue-700 dark:text-slate-400 dark:hover:text-blue-300 rounded text-[10px] font-bold shadow-sm transition-all"
-                                title="Sadece bu satırı yeniden çevir"
+                                className="
+                                    flex items-center justify-center w-6 h-6 rounded-full 
+                                    bg-white dark:bg-slate-800 
+                                    border border-slate-200 dark:border-slate-700 
+                                    text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400
+                                    shadow-sm hover:shadow-md transition-all scale-90 hover:scale-100
+                                "
+                                title="Bu satırı yeniden çevir (Redo)"
                             >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                <span>Yeniden Çevir</span>
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
                             </button>
                         </div>
                     )}
@@ -292,7 +321,7 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
                         </div>
                     )}
 
-                    {cue.status === 'pending' || cue.status === 'translating' ? (
+                    {isTranslating ? (
                        <div className="h-full flex flex-col items-center justify-center text-xs text-slate-400 gap-2 min-h-[60px]">
                            {cue.status === 'translating' ? (
                                <>
@@ -306,8 +335,8 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
                     ) : (
                         <textarea
                             className={`
-                                w-full h-full bg-transparent resize-none focus:outline-none 
-                                text-sm leading-relaxed rounded pt-6 /* pt-6 for redo button space */
+                                w-full flex-1 bg-transparent resize-none focus:outline-none 
+                                text-sm leading-relaxed rounded pt-6 /* pt-6 for badges */
                                 ${isError ? 'text-red-600' : 'text-slate-900 dark:text-slate-100'}
                                 placeholder-slate-300 dark:placeholder-slate-700
                             `}
@@ -318,12 +347,20 @@ const CueList: React.FC<CueListProps> = ({ file, onUpdateCue, onRetryCue, onAnal
                         />
                     )}
 
-                    {/* Action & Status Icons */}
-                    <div className="absolute bottom-1 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded px-1">
-                        {isError && (
-                            <span className="text-[10px] text-red-500 font-bold uppercase">HATA</span>
-                        )}
-                    </div>
+                    {/* Detailed Error Box */}
+                    {isError && (
+                        <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded text-xs flex items-center justify-between gap-2 animate-in slide-in-from-top-1">
+                            <div className="text-red-700 dark:text-red-300 flex-1">
+                                {cue.errorMessage || "Bilinmeyen bir hata oluştu."}
+                            </div>
+                            <button 
+                                onClick={() => onRetryCue(cue.originalId)}
+                                className="bg-red-100 hover:bg-red-200 dark:bg-red-800 dark:hover:bg-red-700 text-red-800 dark:text-red-100 px-2 py-1 rounded font-bold transition-colors"
+                            >
+                                Tekrar Dene
+                            </button>
+                        </div>
+                    )}
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 
+
 export interface TimeCode {
   hours: number;
   minutes: number;
@@ -26,6 +27,7 @@ export interface SubtitleCue {
   translatedText: string;
   refinedText: string; // Result of stage 2
   status: 'pending' | 'translating' | 'translated' | 'refining' | 'completed' | 'error' | 'analyzing_idioms';
+  translationSource?: 'ai' | 'tm' | 'user' | 'cache'; // Track where the translation came from
   errorMessage?: string;
   isLocked: boolean; // If user manually edited, lock it from auto-updates unless forced
   idioms?: Idiom[]; // Detected idioms
@@ -53,6 +55,7 @@ export interface TMDBContext {
 
 export interface AppSettings {
   apiKeys: string[]; // Pool of API keys for load balancing
+  keySelectionStrategy: 'sequential' | 'random'; // Load balancing strategy
   tmdbApiKey: string; // New: TMDB API Key
   translatorModel: string;
   editorModel: string;
@@ -61,6 +64,7 @@ export interface AppSettings {
   batchSize: number; // Number of lines to process in a single request
   translationStyle: 'standard' | 'netflix' | 'anime' | 'documentary';
   glossary: Record<string, string>; // Term -> Translation
+  styleGuide: string; // New: Free-form style rules and character voices
   contextWindowSize: number; // Number of lines before/after to send as context (0 = disabled)
 }
 

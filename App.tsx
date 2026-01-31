@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SubtitleFile, AppSettings, SubtitleCue, TimeCode, ProjectStats, TMDBContext } from './types';
 import { parseSubtitleFile, serializeSubtitleFile } from './utils/parser';
 import { adjustTime } from './utils/time';
-import { translateText, translateBatch, refineText, extractGlossaryFromText, analyzeIdioms } from './services/gemini';
+import { translateText, translateBatch, refineText, analyzeProjectConsistency, analyzeIdioms } from './services/gemini';
 import { searchTMDB, formatTMDBContext } from './services/tmdb';
 import { saveDraftToDB, loadDraftFromDB, clearDraftFromDB, saveToLibrary, saveToTM, loadFullTM } from './utils/db';
 import CueList from './components/CueList';
@@ -11,6 +11,7 @@ import LibraryModal from './components/LibraryModal';
 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKeys: [],
+  keySelectionStrategy: 'sequential',
   tmdbApiKey: '',
   translatorModel: 'gemini-2.5-flash-latest',
   editorModel: 'gemini-2.5-flash-latest',
@@ -19,6 +20,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   batchSize: 1,
   translationStyle: 'standard',
   glossary: {},
+  styleGuide: '',
   contextWindowSize: 2
 };
 
@@ -41,6 +43,7 @@ const COMMON_WORD_CACHE: Record<string, string> = {
 interface ErrorAction {
   action: 'retry' | 'stop' | 'skip' | 'wait_quota';
   message: string;
+  detail?: string;
   delay: number;
 }
 
@@ -48,6 +51,7 @@ const analyzeError = (error: any): ErrorAction => {
   let msg = '';
   let status = error.status || 0;
 
+  // Extract deep error message
   if (error.response?.data?.error) {
       msg = error.response.data.error.message;
       status = error.response.data.error.code || status;
@@ -57,26 +61,51 @@ const analyzeError = (error: any): ErrorAction => {
   } else if (error.message) {
       msg = error.message;
   } else {
-      try { msg = JSON.stringify(error); } catch { msg = 'Unknown error'; }
+      try { msg = JSON.stringify(error); } catch { msg = 'Bilinmeyen Hata'; }
   }
   
-  msg = (msg || '').toLowerCase();
+  const lowerMsg = (msg || '').toLowerCase();
 
-  if (status === 429 || msg.includes('429') || msg.includes('quota') || msg.includes('exhausted') || msg.includes('resource_exhausted')) {
-    // Critical: Quota Exceeded
-    return { action: 'wait_quota', message: '⚠️ Kota Dolu (429)', delay: 1000 };
+  // 1. Quota / Rate Limit (429)
+  if (status === 429 || lowerMsg.includes('429') || lowerMsg.includes('quota') || lowerMsg.includes('exhausted') || lowerMsg.includes('resource_exhausted')) {
+    return { 
+        action: 'wait_quota', 
+        message: '⚠️ Kota Doldu (429)', 
+        detail: 'API istek sınırına ulaşıldı. Sistem otomatik olarak bekleyip tekrar deneyecek.',
+        delay: 2000 
+    };
   }
-  if (status === 401 || status === 403 || msg.includes('api key') || msg.includes('unauthenticated')) {
-    return { action: 'stop', message: '⛔ Geçersiz API Anahtarı', delay: 0 };
+
+  // 2. Authentication (400, 401, 403)
+  if (status === 400 && lowerMsg.includes('api key')) {
+       return { action: 'stop', message: '⛔ Geçersiz API Anahtarı', detail: 'Girilen API anahtarı hatalı. Lütfen ayarlardan kontrol edin.', delay: 0 };
   }
-  if (status >= 500 || msg.includes('unavailable') || msg.includes('timeout') || msg.includes('network')) {
-    return { action: 'retry', message: '☁️ Sunucu Hatası', delay: 2000 };
+  if (status === 401 || status === 403 || lowerMsg.includes('unauthenticated') || lowerMsg.includes('permission')) {
+    return { action: 'stop', message: '⛔ Yetki Hatası', detail: 'API anahtarınızın bu modeli kullanma yetkisi yok veya süresi dolmuş.', delay: 0 };
   }
-  if (msg.includes('blocked') || msg.includes('safety') || msg.includes('recitation')) {
-    return { action: 'skip', message: '🛡️ Güvenlik Filtresi', delay: 500 };
+
+  // 3. Safety Filters & Content Policy
+  if (lowerMsg.includes('blocked') || lowerMsg.includes('safety') || lowerMsg.includes('recitation') || lowerMsg.includes('finishreason')) {
+    return { 
+        action: 'skip', 
+        message: '🛡️ Güvenlik Filtresi', 
+        detail: 'AI, metni "güvenli değil" olarak işaretlediği için çevirmedi. Bu satırı manuel çevirin.',
+        delay: 500 
+    };
+  }
+
+  // 4. Server Errors (5xx)
+  if (status >= 500 || lowerMsg.includes('unavailable') || lowerMsg.includes('timeout') || lowerMsg.includes('network') || lowerMsg.includes('fetch')) {
+    return { 
+        action: 'retry', 
+        message: '☁️ Sunucu/Ağ Hatası', 
+        detail: 'Google sunucularına veya internete erişilemiyor. Tekrar deneniyor.',
+        delay: 3000 
+    };
   }
   
-  return { action: 'retry', message: `❌ Hata: ${msg.slice(0, 30)}...`, delay: 1000 };
+  // Default
+  return { action: 'retry', message: `❌ Hata (${status})`, detail: msg.slice(0, 100), delay: 1000 };
 };
 
 function App() {
@@ -240,7 +269,7 @@ function App() {
 
   // --- PROCESSING LOGIC (The Brain) ---
   
-  // Helper: Try to get a translation using rotation logic
+  // Helper: Try to get a translation using rotation logic with strategies
   const executeWithRotation = async (
       taskFn: (key: string) => Promise<any>
   ): Promise<{ success: boolean, result?: any, error?: ErrorAction }> => {
@@ -249,15 +278,24 @@ function App() {
       let attempts = 0;
       let lastError: ErrorAction | null = null;
 
-      // Try rotating through keys
+      // Determine Starting Index based on Strategy
+      let startIndex = keyIndexRef.current;
+      
+      if (settings.keySelectionStrategy === 'random') {
+          startIndex = Math.floor(Math.random() * keys.length);
+      }
+
+      // Try rotating through keys starting from startIndex
       while (attempts < keys.length) {
-          const currentKeyIndex = (keyIndexRef.current + attempts) % keys.length;
+          const currentKeyIndex = (startIndex + attempts) % keys.length;
           const key = keys[currentKeyIndex];
           
           try {
               const result = await taskFn(key);
-              // Success! Update global rotation pointer
+              
+              // Success! 
               keyIndexRef.current = (currentKeyIndex + 1) % keys.length;
+              
               return { success: true, result };
           } catch (e: any) {
               const info = analyzeError(e);
@@ -271,14 +309,14 @@ function App() {
                   // Invalid key: Fatal
                   return { success: false, error: info };
               } else {
-                  // Other errors: Retry same key or skip? For now, try next key
+                  // Other errors: Retry same key or skip? For now, try next key (failover)
                   attempts++;
               }
           }
       }
 
       // If we are here, ALL keys failed or produced 429
-      return { success: false, error: lastError || { action: 'retry', message: 'Unknown', delay: 1000 } };
+      return { success: false, error: lastError || { action: 'retry', message: 'Bilinmeyen Hata', delay: 1000 } };
   };
 
   const processNext = useCallback(async () => {
@@ -324,9 +362,9 @@ function App() {
 
     for (const cue of batchCues) {
         const clean = cue.originalText.trim();
-        const lower = clean.toLowerCase().replace(/[^\w\s]/gi, '');
+        const lower = clean.toLowerCase();
         
-        let found = settings.glossary[clean] || translationMemory.get(clean) || COMMON_WORD_CACHE[lower];
+        let found = settings.glossary[clean] || translationMemory.get(lower) || COMMON_WORD_CACHE[lower.replace(/[^\w\s]/gi, '')];
         
         if (found) {
             memoryHits.push({ id: cue.originalId, text: found });
@@ -341,16 +379,14 @@ function App() {
             if (f.id !== file.id) return f;
             const newCues = f.cues.map(c => {
                 const hit = memoryHits.find(h => h.id === c.originalId);
-                if (hit) return { ...c, translatedText: hit.text, refinedText: hit.text, status: 'completed' as const };
+                if (hit) return { ...c, translatedText: hit.text, refinedText: hit.text, status: 'completed' as const, translationSource: 'tm' as const };
                 return c;
             });
             return { ...f, cues: newCues, progress: Math.round((newCues.filter(c => c.status === 'completed').length / newCues.length) * 100) };
         }));
-        // Remove hits from queue
         const hitIds = memoryHits.map(h => h.id);
         setProcessingQueue(q => q.filter(id => !hitIds.includes(id)));
         
-        // If everything was in memory, loop immediately
         if (needsTranslation.length === 0) {
             setTimeout(() => { if(processingRef.current) processNext(); }, 50);
             return;
@@ -358,11 +394,9 @@ function App() {
     }
 
     // --- STEP 2: Translate Remaining Items via API ---
-    
-    // Set status to translating
     setFiles(prev => prev.map(f => f.id !== file.id ? f : { 
         ...f, 
-        cues: f.cues.map(c => needsTranslation.some(n => n.originalId === c.originalId) ? { ...c, status: 'translating' } : c)
+        cues: f.cues.map(c => needsTranslation.some(n => n.originalId === c.originalId) ? { ...c, status: 'translating', errorMessage: undefined } : c)
     }));
 
     const contextStr = tmdbContext ? formatTMDBContext(tmdbContext) : "";
@@ -371,22 +405,31 @@ function App() {
     // Prepare Task
     const task = async (apiKey: string) => {
         if (needsTranslation.length > 1) {
-            // Batch
             return await translateBatch(
                 needsTranslation.map(c => c.originalText),
                 apiKey,
                 settings.translatorModel,
                 settings.translationStyle,
                 settings.glossary,
+                settings.styleGuide,
                 contextStr
             );
         } else {
-            // Single
             const cue = needsTranslation[0];
             const w = settings.contextWindowSize ?? 2;
             const prev = w > 0 ? file.cues.slice(Math.max(0, cueIndex - w), cueIndex).map(c => c.originalText) : [];
             const next = w > 0 ? file.cues.slice(cueIndex + 1, cueIndex + 1 + w).map(c => c.originalText) : [];
-            return await translateText(cue.originalText, prev, next, apiKey, settings.translatorModel, settings.translationStyle, settings.glossary, contextStr);
+            return await translateText(
+                cue.originalText, 
+                prev, 
+                next, 
+                apiKey, 
+                settings.translatorModel, 
+                settings.translationStyle, 
+                settings.glossary, 
+                settings.styleGuide,
+                contextStr
+            );
         }
     };
 
@@ -398,16 +441,16 @@ function App() {
         setIsWaitingForQuota(false);
         const resultsArray = Array.isArray(result) ? result : [result];
         
-        // Update Files & TM
         setFiles(prev => prev.map(f => {
             if (f.id !== file.id) return f;
             const newCues = f.cues.map(c => {
                 const idx = needsTranslation.findIndex(n => n.originalId === c.originalId);
                 if (idx !== -1) {
                     const txt = resultsArray[idx];
-                    saveToTM(c.originalText, txt); // Save to DB
-                    setTranslationMemory(mem => new Map(mem).set(c.originalText.trim(), txt)); // Save to RAM
-                    return { ...c, translatedText: txt, refinedText: txt, status: 'completed' as const };
+                    const normalized = c.originalText.trim().toLowerCase();
+                    saveToTM(normalized, txt); 
+                    setTranslationMemory(mem => new Map(mem).set(normalized, txt));
+                    return { ...c, translatedText: txt, refinedText: txt, status: 'completed' as const, translationSource: 'ai' as const, errorMessage: undefined };
                 }
                 return c;
             });
@@ -415,11 +458,9 @@ function App() {
             return { ...f, cues: newCues, progress };
         }));
 
-        // Remove from Queue
         const doneIds = needsTranslation.map(c => c.originalId);
         setProcessingQueue(q => q.filter(id => !doneIds.includes(id)));
         
-        // Next loop
         setTimeout(() => { if(processingRef.current) processNext(); }, settings.delayBetweenRequests);
 
     } else {
@@ -427,15 +468,9 @@ function App() {
         const errAction = error?.action || 'retry';
         
         if (errAction === 'wait_quota') {
-            // INFINITE RETRY MODE
-            // All keys failed with 429.
             setIsWaitingForQuota(true);
             setQuotaWaitSeconds(60);
             addLog("⏳ Tüm anahtarlar dolu. 60sn bekleniyor...");
-            
-            // Do NOT remove from queue.
-            // Do NOT stop processing.
-            // Just schedule retry.
             
             const timer = setInterval(() => {
                 setQuotaWaitSeconds(prev => {
@@ -454,14 +489,22 @@ function App() {
             
         } else if (errAction === 'stop') {
             setProcessing(false);
-            alert(error?.message);
+            alert(error?.message + "\n\n" + error?.detail);
         } else {
-             // Skip logic for safety filters or other errors
+             // Skip logic for safety filters or network errors
              const skipIds = needsTranslation.map(c => c.originalId);
+             
              setFiles(prev => prev.map(f => f.id !== file.id ? f : {
-                 ...f, cues: f.cues.map(c => skipIds.includes(c.originalId) ? { ...c, status: 'error' as const, errorMessage: error?.message } : c)
+                 ...f, 
+                 cues: f.cues.map(c => skipIds.includes(c.originalId) ? { 
+                     ...c, 
+                     status: 'error' as const, 
+                     errorMessage: `${error?.message}: ${error?.detail || ''}` 
+                 } : c)
              }));
+
              setProcessingQueue(q => q.filter(id => !skipIds.includes(id)));
+             // Continue to next item despite error
              setTimeout(() => { if(processingRef.current) processNext(); }, 1000);
         }
     }
@@ -491,31 +534,60 @@ function App() {
     const file = files.find(f => f.id === activeFileId);
     const cue = file?.cues.find(c => c.originalId === cueId);
     
-    // UI Update
+    // UI Update with 'user' source
     setFiles(prev => prev.map(f => {
         if (f.id !== activeFileId) return f;
-        const newCues = f.cues.map(c => c.originalId === cueId ? { ...c, [type === 'refined' ? 'refinedText' : 'translatedText']: text, isLocked: true } : c);
+        const newCues = f.cues.map(c => c.originalId === cueId ? { 
+            ...c, 
+            [type === 'refined' ? 'refinedText' : 'translatedText']: text, 
+            isLocked: true,
+            status: 'completed' as const, // Clear error on manual fix
+            errorMessage: undefined,
+            translationSource: 'user' as const
+        } : c);
         return { ...f, cues: newCues };
     }));
     
-    // TM Update
+    // TM Update (Local + Backend)
     if(cue && text.trim().length > 0) {
         const clean = cue.originalText.trim();
-        setTranslationMemory(prev => new Map(prev).set(clean, text)); // RAM
-        await saveToTM(clean, text); // Disk
+        const normalized = clean.toLowerCase();
+        
+        // 1. Update Local RAM & DB (Use Normalized Key for hit rate)
+        setTranslationMemory(prev => new Map(prev).set(normalized, text));
+        await saveToTM(normalized, text); 
+
+        // 2. Update Backend Redis
+        try {
+            fetch('/api/tm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: clean, 
+                    translation: text,
+                    target_lang: 'tr'
+                })
+            }).then(res => {
+                if(res.ok) addLog("💾 TM Güncellendi (Redis & Yerel)");
+            });
+        } catch (e) {
+            console.warn("Failed to sync correction to backend TM:", e);
+        }
     }
   };
 
-  // ... (Keep existing minor helpers: retryCue, handleIdiomAnalysis, etc.)
   const retryCue = (cueId: string) => {
     if (!activeFileId) return;
-    setFiles(prev => prev.map(f => f.id !== activeFileId ? f : { ...f, cues: f.cues.map(c => c.originalId === cueId ? { ...c, status: 'pending' } : c) }));
-    setProcessingQueue(prev => [...prev, cueId]);
+    setFiles(prev => prev.map(f => f.id !== activeFileId ? f : { 
+        ...f, 
+        cues: f.cues.map(c => c.originalId === cueId ? { ...c, status: 'pending', errorMessage: undefined } : c) 
+    }));
+    setProcessingQueue(prev => [cueId, ...prev]); // Add to top of queue
     setProcessing(true);
   };
 
   const handleIdiomAnalysis = async (cueId: string) => {
-      const apiKey = settings.apiKeys[0]; // Idiom uses first key for simplicity
+      const apiKey = settings.apiKeys[0]; 
       if (!activeFileId || !apiKey) return;
       
       const file = files.find(f => f.id === activeFileId);
@@ -532,10 +604,40 @@ function App() {
       }
   };
 
-  // Keep existing file/watch logic...
-  // (Assuming handleSaveToLibrary, exportFile, processFiles, handleFindReplace, etc. remain largely same)
-  // Re-implementing simplified versions for context safety in update
-  
+  const handleAnalyzeProject = async () => {
+      if (settings.apiKeys.length === 0) { alert("API Anahtarı eksik."); return; }
+      if (files.length === 0) { alert("Analiz için yüklü dosya yok."); return; }
+
+      setAnalyzingGlossary(true);
+      addLog("🔍 Proje tutarlılık analizi başlatıldı...");
+      
+      try {
+          let fullText = "";
+          files.forEach(f => {
+              fullText += `--- FILE: ${f.name} ---\n`;
+              f.cues.forEach(c => fullText += `${c.originalText}\n`);
+          });
+          
+          const result = await analyzeProjectConsistency(fullText, settings.apiKeys[0], settings.editorModel);
+          
+          setSettings(prev => ({
+              ...prev,
+              glossary: { ...prev.glossary, ...result.glossary },
+              styleGuide: prev.styleGuide ? prev.styleGuide + "\n" + result.styleGuide : result.styleGuide
+          }));
+          
+          addLog(`✅ Analiz tamamlandı: ${Object.keys(result.glossary).length} terim eklendi.`);
+          alert("Analiz tamamlandı! Ayarlar > Sözlük sekmesinden sonuçları görebilirsiniz.");
+          
+      } catch (e) {
+          console.error(e);
+          addLog("❌ Analiz hatası.");
+          alert("Analiz sırasında hata oluştu.");
+      } finally {
+          setAnalyzingGlossary(false);
+      }
+  };
+
   const processFiles = async (fileList: FileList) => {
     const newFiles: SubtitleFile[] = [];
     for (let i = 0; i < fileList.length; i++) {
@@ -585,12 +687,11 @@ function App() {
           } else {
               if (text.includes(findText)) { newText = text.split(findText).join(replaceText); count++; }
           }
-          return newText !== text ? { ...cue, refinedText: newText, isLocked: true } : cue;
+          return newText !== text ? { ...cue, refinedText: newText, isLocked: true, translationSource: 'user' as const } : cue;
       });
       if (count > 0) {
           setFiles(prev => prev.map(f => f.id === activeFile.id ? { ...f, cues: newCues } : f));
           setIsFindReplaceOpen(false);
-          // Update TM for bulk changes? Maybe risky, skip for now.
       }
   };
 
@@ -603,8 +704,6 @@ function App() {
       return { totalLines: activeFile.cues.length, totalWords, completedLines: completed, estimatedTimeRemaining: estimatedTime };
   };
 
-  const generateProjectGlossary = async () => {/* Kept same */};
-  const generateGlossary = async () => {/* Kept same */};
   const handleSaveToLibrary = async () => { if(activeFile) await saveToLibrary(activeFile); };
   const handleLoadFromLibrary = (file: any) => { setFiles(prev => [...prev, file]); setActiveFileId(file.id); };
   const handleManualTmdbSearch = async () => {/* Kept same */};
@@ -619,7 +718,9 @@ function App() {
          settings={settings} 
          onSave={(s) => { setSettings(s); setIsSettingsOpen(false); }} 
          onStartAutomation={(input, output) => setWatchHandles({ input, output })}
+         onAnalyzeProject={handleAnalyzeProject}
          isAutomationActive={!!watchHandles}
+         isAnalyzing={analyzingGlossary}
       />
       <LibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} onLoadFile={handleLoadFromLibrary} />
       
@@ -725,11 +826,14 @@ function App() {
             {activeFile && (
                 <>
                 {isWaitingForQuota ? (
-                    <div className="w-full py-4 px-4 rounded bg-amber-500/10 border border-amber-500/50 text-amber-600 dark:text-amber-400 text-center flex flex-col items-center justify-center gap-2">
+                    <div className="w-full py-4 px-4 rounded bg-amber-500/10 border border-amber-500/50 text-amber-600 dark:text-amber-400 text-center flex flex-col items-center justify-center gap-2 animate-in fade-in">
                         <div className="font-bold">KOTA DOLU ⏳</div>
                         <div className="text-2xl font-mono">{quotaWaitSeconds}s</div>
                         <div className="text-[10px] opacity-75">Tüm anahtarlar denendi. Bekleniyor...</div>
-                        <button onClick={() => setQuotaWaitSeconds(1)} className="text-xs underline hover:text-amber-300">Şimdi Dene</button>
+                        <div className="text-[9px] text-amber-700 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/30 p-1.5 rounded mt-1">
+                            İpucu: Ayarlardan daha fazla API anahtarı ekleyerek bu süreyi düşürebilirsiniz.
+                        </div>
+                        <button onClick={() => setQuotaWaitSeconds(1)} className="text-xs underline hover:text-amber-300 mt-1">Şimdi Dene</button>
                     </div>
                 ) : (
                     <button 

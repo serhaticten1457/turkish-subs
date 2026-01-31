@@ -99,6 +99,23 @@ class TranslationMemoryService:
         # Include target_lang in key to distinguish translations
         return f"tm:{target_lang.lower()}:{text_hash}"
 
+    async def save_manual_translation(self, text: str, translation: str, target_lang: str = "tr") -> bool:
+        """
+        Explicitly saves a translation to the memory (e.g., user correction).
+        """
+        if not text or not translation or not self.redis:
+            return False
+            
+        key = self._generate_key(text, target_lang)
+        try:
+            # Save with TTL
+            await self.redis.set(key, translation, ex=self.ttl_seconds)
+            logger.info(f"TM Updated: '{text}' -> '{translation}'")
+            return True
+        except Exception as e:
+            logger.error(f"Redis WRITE Error for {key}: {e}")
+            return False
+
     async def get_or_compute(
         self, 
         text: str, 
