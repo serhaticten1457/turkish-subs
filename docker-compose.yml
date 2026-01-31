@@ -9,7 +9,7 @@ services:
     container_name: subtitle-studio-web
     restart: unless-stopped
     ports:
-      - "3005:80"
+      - "3000:80"  # HTTP Portu (Artık 3000)
       - "3443:443" # HTTPS Portu
     volumes:
       - ./certs:/etc/nginx/certs # Sertifikaları içeri aktar

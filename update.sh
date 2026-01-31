@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Hatalarda durma, elle yönetelim
+# Hatalarda durma
 set +e
 
 # Renkler
@@ -17,29 +17,25 @@ echo -e "${YELLOW}==========================================${NC}"
 
 # Docker komutları için sudo gerekli mi?
 if [ "$EUID" -ne 0 ]; then
-    # Root değilsek Docker komutlarının başına sudo ekle
     DOCKER="sudo docker"
     COMPOSE="sudo docker-compose"
 else
-    # Zaten root isek gerek yok
     DOCKER="docker"
     COMPOSE="docker-compose"
 fi
 
 # Git kontrolü
 if ! command -v git &> /dev/null; then
-    echo -e "${RED}HATA: Git yüklü değil. Lütfen 'sudo apt install git' ile yükleyin.${NC}"
+    echo -e "${RED}HATA: Git yüklü değil.${NC}"
     exit 1
 fi
 
 echo -e "1. Uzak sunucu adresi (Origin) doğrulanıyor..."
-# .git klasörü yoksa başlat
 if [ ! -d ".git" ]; then
     git init
     git branch -M main
 fi
 
-# Origin remote'unu kontrol et ve ayarla
 if ! git remote | grep -q "^origin$"; then
     git remote add origin $REPO_URL
 else
@@ -47,9 +43,24 @@ else
 fi
 
 echo -e "2. Yerel değişiklikler sıfırlanıyor ve güncel kod çekiliyor..."
-# Çakışmaları önlemek için yerel dosyaları sunucuyla birebir eşle
 git fetch origin main
 git reset --hard origin/main
+
+echo -e "3. SSL Sertifikaları Kontrol Ediliyor..."
+if [ ! -d "./certs" ]; then
+    mkdir -p ./certs
+fi
+
+if [ ! -f "./certs/self-signed.crt" ] || [ ! -f "./certs/self-signed.key" ]; then
+    echo -e "${YELLOW}⚠️ SSL Sertifikası bulunamadı. Otomatik oluşturuluyor...${NC}"
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout ./certs/self-signed.key \
+        -out ./certs/self-signed.crt \
+        -subj "/C=TR/ST=Istanbul/L=Istanbul/O=SubtitleStudio/OU=Dev/CN=localhost" 2>/dev/null
+    echo -e "${GREEN}✅ Sertifika oluşturuldu.${NC}"
+else
+    echo -e "${GREEN}✅ Sertifikalar mevcut.${NC}"
+fi
 
 echo -e ""
 echo -e "${YELLOW}==========================================${NC}"
@@ -62,17 +73,17 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
-# Konteynerleri yeniden oluştur ve başlat
 echo -e "Konteynerler durduruluyor..."
 $COMPOSE down
 
 echo -e "Yeniden başlatılıyor (Bu işlem biraz sürebilir)..."
 $COMPOSE up -d --build --remove-orphans
 
-echo -e "3. Temizlik yapılıyor..."
+echo -e "Temizlik yapılıyor..."
 $DOCKER image prune -f
 
 echo -e ""
 echo -e "${GREEN}==========================================${NC}"
 echo -e "${GREEN}✅ GÜNCELLEME BAŞARIYLA TAMAMLANDI!${NC}"
+echo -e "${GREEN}🔗 ADRES: http://$(hostname -I | awk '{print $1}'):3000${NC}"
 echo -e "${GREEN}==========================================${NC}"
