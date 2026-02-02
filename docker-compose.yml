@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. Frontend (Vite Build + Nginx)
+  # 1. Frontend (Web Arayüzü)
   app:
     build:
       context: .
@@ -9,10 +9,10 @@ services:
     container_name: subtitle-studio-web
     restart: unless-stopped
     ports:
-      - "3000:80"  # HTTP Portu (Artık 3000)
-      - "3443:443" # HTTPS Portu
+      - "3000:80"   # HTTP
+      - "3443:443"  # HTTPS
     volumes:
-      - ./certs:/etc/nginx/certs # Sertifikaları içeri aktar
+      - ./certs:/etc/nginx/certs
     depends_on:
       - api
     networks:
@@ -20,11 +20,9 @@ services:
     labels:
       - "casaos.app.name=Altyazı Stüdyosu Pro"
       - "casaos.app.icon=https://cdn-icons-png.flaticon.com/512/2920/2920329.png"
-      - "casaos.app.description=Yapay zeka destekli altyazı çeviri stüdyosu."
-      - "casaos.app.category=Productivity"
       - "casaos.app.index=/"
 
-  # 2. Backend (FastAPI)
+  # 2. Backend (API)
   api:
     build:
       context: .
@@ -38,7 +36,7 @@ services:
     networks:
       - subtitle-net
 
-  # 3. Cache (Redis)
+  # 3. Cache (Redis Veritabanı)
   redis:
     image: redis:alpine
     container_name: subtitle-studio-redis
