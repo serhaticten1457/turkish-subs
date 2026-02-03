@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. Frontend (Web Arayüzü)
+  # 1. Frontend (Web Arayüzü + Nginx Proxy)
   app:
     build:
       context: .
@@ -9,20 +9,16 @@ services:
     container_name: subtitle-studio-web
     restart: unless-stopped
     ports:
-      - "3000:80"   # HTTP
-      - "3443:443"  # HTTPS
+      - "3000:80"   # HTTP Arayüz
+      - "3443:443"  # HTTPS Arayüz (Otomasyon için şart)
     volumes:
       - ./certs:/etc/nginx/certs
     depends_on:
       - api
     networks:
       - subtitle-net
-    labels:
-      - "casaos.app.name=Altyazı Stüdyosu Pro"
-      - "casaos.app.icon=https://cdn-icons-png.flaticon.com/512/2920/2920329.png"
-      - "casaos.app.index=/"
 
-  # 2. Backend (API)
+  # 2. Backend (API - FastAPI)
   api:
     build:
       context: .
@@ -53,3 +49,20 @@ networks:
 
 volumes:
   redis_data:
+
+# CasaOS App Store Metadata
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+    - arm
+  main: app
+  description:
+    en: Professional AI-powered Subtitle Studio using Gemini API.
+    tr: Gemini API kullanan profesyonel yapay zeka altyazı stüdyosu.
+  author: SubtitleStudio
+  category: Media
+  icon: https://cdn-icons-png.flaticon.com/512/11226/11226198.png
+  title:
+    en: Subtitle Studio
+    tr: Altyazı Stüdyosu

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SubtitleFile, AppSettings, SubtitleCue, TimeCode, ProjectStats, TMDBContext } from './utils/types';
 import { parseSubtitleFile, serializeSubtitleFile } from './utils/parser';
 import { adjustTime } from './utils/time';
+import { optimizeSubtitleBreaks } from './utils/segmenter';
 import { translateText, translateBatch, refineText, analyzeProjectConsistency, analyzeIdioms } from './services/gemini';
 import { searchTMDB, formatTMDBContext } from './services/tmdb';
 import { saveDraftToDB, loadDraftFromDB, clearDraftFromDB, saveToLibrary, saveToTM, loadFullTM } from './utils/db';
@@ -638,6 +639,46 @@ function App() {
       }
   };
 
+  const handleSmartLineBreaks = () => {
+      if (!activeFileId) return;
+      
+      const file = files.find(f => f.id === activeFileId);
+      if (!file) return;
+
+      let changedCount = 0;
+      const newCues = file.cues.map(cue => {
+          // Prefer refinedText, fallback to translatedText
+          const text = cue.refinedText || cue.translatedText;
+          if (!text) return cue;
+
+          // Only optimize if it hasn't been manually locked by user
+          // or if the user explicitly wants to force it (we assume button click is explicit enough for unlocked ones)
+          if (cue.isLocked) return cue;
+
+          const optimized = optimizeSubtitleBreaks(text);
+          
+          if (optimized !== text) {
+              changedCount++;
+              return { 
+                  ...cue, 
+                  refinedText: optimized, 
+                  translatedText: !cue.refinedText ? optimized : cue.translatedText, // Update translated text only if no refined text existed
+                  // We don't change status to user/locked to allow future AI refinements if needed, 
+                  // but effectively this is a "refinement".
+                  translationSource: cue.translationSource || 'ai'
+              };
+          }
+          return cue;
+      });
+
+      if (changedCount > 0) {
+          setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, cues: newCues } : f));
+          addLog(`✨ Akıllı Bölme: ${changedCount} satırın yapısı düzeltildi.`);
+      } else {
+          addLog("✨ Akıllı Bölme: Düzeltilecek satır bulunamadı (Zaten uygun).");
+      }
+  };
+
   const processFiles = async (fileList: FileList) => {
     const newFiles: SubtitleFile[] = [];
     for (let i = 0; i < fileList.length; i++) {
@@ -848,7 +889,10 @@ function App() {
                     </button>
                 )}
                 
-                <button onClick={() => setIsStatsOpen(true)} className="mt-3 w-full py-2 bg-slate-100 dark:bg-slate-800 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200">📊 İSTATİSTİK</button>
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                    <button onClick={() => setIsStatsOpen(true)} className="py-2 bg-slate-100 dark:bg-slate-800 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200">📊 İSTATİSTİK</button>
+                    <button onClick={handleSmartLineBreaks} className="py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors" title="Satırları gramer ve noktalama kurallarına göre yeniden böl.">✨ AKILLI BÖL</button>
+                </div>
                 </>
             )}
         </div>
