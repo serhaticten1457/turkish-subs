@@ -11,5 +11,5 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     
     # Run the server
-    # Important: host must be localhost for security in desktop apps
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=False)
+    # Important: host must be 0.0.0.0 for Docker containers to be accessible from other containers (nginx)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)

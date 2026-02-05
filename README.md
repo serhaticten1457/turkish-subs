@@ -1,33 +1,55 @@
 # Altyazı Stüdyosu Pro
 
-Yapay zeka destekli, profesyonel altyazı çeviri ve düzenleme aracı.
+Yapay zeka destekli, profesyonel altyazı çeviri ve düzenleme aracı. Gemini AI ile güçlendirilmiş, çift aşamalı çeviri hattı.
 
-## 🚀 Kurulum ve Çalıştırma
+![Ekran Görüntüsü](https://cdn-icons-png.flaticon.com/512/11226/11226198.png)
 
-### Geliştirme Ortamı (Bilgisayarınız)
-1. Kodları düzenleyin.
-2. Değişiklikleri gönderin:
-   ```bash
-   git add .
-   git commit -m "Yeni özellikler"
-   git push origin main
-   ```
+## 🛠️ Gereksinimler
 
-### Sunucu / CasaOS (Raspberry Pi)
-Bu işlemi **sadece bir kez** yapmanız gerekir:
-1. Terminali açın.
-2. Proje klasörüne gidin: `cd subtitle-studio`
-3. Güncelleme betiğine izin verin: `chmod +x update.sh`
+- **Docker:** Uygulamanın çalışması için Docker (veya Docker Desktop) kurulu olmalıdır.
+- **Gemini API Key:** Google AI Studio üzerinden alınmış ücretsiz bir API anahtarı.
 
-## 🔄 Nasıl Güncellenir?
+---
 
-Geliştirme bilgisayarınızdan kodları `git push` ile gönderdikten sonra, Raspberry Pi terminalinde sadece şunu yazın:
+## 🪟 Windows Kurulumu
+
+1. **Docker Desktop**'ı indirin ve kurun.
+2. Bu projeyi bir klasöre indirin (ZIP olarak veya git clone ile).
+3. Klasör içindeki **`setup_windows.bat`** dosyasına çift tıklayın.
+4. Kurulum tamamlandığında açılan siyah pencerede size verilen linke tıklayın:
+   - **http://localhost:3000**
+
+> **Not:** Otomasyon özelliklerini (Klasör İzleme) kullanmak için **HTTPS** versiyonunu (`https://localhost:3443`) kullanmalısınız. Tarayıcı "Güvenli Değil" uyarısı verirse "Gelişmiş -> Devam Et" seçeneğini kullanın.
+
+---
+
+## 🐧 Linux / Raspberry Pi Kurulumu
+
+Terminal üzerinden aşağıdaki komutları sırasıyla çalıştırın:
 
 ```bash
+# 1. Proje klasörüne girin
+cd turkish-subs
+
+# 2. Kurulum scriptine izin verin
+chmod +x update.sh
+
+# 3. Kurulumu başlatın
 ./update.sh
 ```
 
-Bu komut:
-1. GitHub'dan son kodları çeker.
-2. Docker'ı günceller.
-3. Sistemi yeniden başlatır.
+---
+
+## 🛠️ Özellikler
+- **AI Destekli Çeviri:** Gemini 2.5/3.0 modelleri ile bağlamsal çeviri.
+- **Otomasyon (Watch Folder):** Klasöre atılan dosyaları otomatik çevirip kaydeder.
+- **TMDB Entegrasyonu:** Film/Dizi konusunu anlayarak doğru terminoloji kullanır.
+- **Çeviri Hafızası (TM):** Yaptığınız düzeltmeleri hatırlar ve bir sonraki çeviride kullanır.
+- **Deyim Sözlüğü:** İngilizce deyimleri yakalar ve yerelleştirme seçenekleri sunar.
+
+## 💻 Geliştirici Notları
+
+Proje Docker üzerinde 3 ana servis olarak çalışır:
+- **app (Frontend):** React + Vite + Nginx (Port 3000/3443)
+- **api (Backend):** FastAPI + Python (Port 8000)
+- **redis (Cache):** Çeviri hafızası ve kuyruk yönetimi.
