@@ -1,4 +1,7 @@
 from fastapi import FastAPI, HTTPException, Body
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import os
@@ -6,9 +9,8 @@ from contextlib import asynccontextmanager
 from backend.services.translation_memory import TranslationMemoryService
 from google.genai import GoogleGenAI
 
-# Initialize Translation Memory Service
-# Redis URL should come from environment variables (Docker service name)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Environment Variable or Default to None (Force fallback to local file if not in Docker)
+REDIS_URL = os.getenv("REDIS_URL", None)
 tm_service = TranslationMemoryService(redis_url=REDIS_URL)
 
 @asynccontextmanager
@@ -21,8 +23,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Subtitle Studio API", lifespan=lifespan)
 
-# --- Models ---
+# Allow CORS for development (when React runs on 3000 and Py on 8000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# --- Models ---
 class TranslationRequest(BaseModel):
     text: str
     target_lang: str = "tr"
@@ -41,39 +51,28 @@ class TranslationResponse(BaseModel):
     translated_text: str
     cached: bool
 
-# --- Endpoints ---
+# --- API Endpoints ---
 
-@app.get("/")
+@app.get("/api/health")
 def read_root():
-    return {"status": "ok", "service": "Subtitle Studio API"}
+    return {"status": "ok", "service": "Subtitle Studio API", "mode": "Desktop" if tm_service.use_local_store else "Server"}
 
-@app.post("/tm")
+@app.post("/api/tm")
 async def save_to_tm(entry: TMUpdateEntry):
-    """
-    Saves a user correction to the Redis Translation Memory.
-    """
     success = await tm_service.save_manual_translation(
         text=entry.text,
         translation=entry.translation,
         target_lang=entry.target_lang
     )
     if not success:
-        # Don't fail the request, just warn
-        return {"status": "warning", "message": "Failed to save to Redis"}
+        return {"status": "warning", "message": "Failed to save to Memory"}
     return {"status": "ok"}
 
-@app.post("/translate", response_model=TranslationResponse)
+@app.post("/api/translate", response_model=TranslationResponse)
 async def translate_text(req: TranslationRequest):
-    """
-    Translates text using Translation Memory (Redis) -> Cache Miss -> Gemini AI.
-    """
-    
-    # Define the AI Callback (Fallback if cache misses)
     async def call_ai_generation() -> str:
         try:
             client = GoogleGenAI(api_key=req.api_key)
-            
-            # Construct Prompt (Simplified for backend logic, mirroring frontend logic)
             context_before = "\n".join(req.previous_lines) if req.previous_lines else ""
             context_after = "\n".join(req.next_lines) if req.next_lines else ""
             
@@ -83,9 +82,7 @@ async def translate_text(req: TranslationRequest):
             ÇEVRİLECEK METİN: "{req.text}"
             ---
             {f'\nSONRAKİ BAĞLAM:\n{context_after}' if context_after else ''}
-            
             Ek Bilgi: {req.context or ''}
-            
             Sadece "ÇEVRİLECEK METİN" kısmını Türkçe'ye çevir.
             """
             
@@ -101,22 +98,24 @@ async def translate_text(req: TranslationRequest):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"AI Generation failed: {str(e)}")
 
-    # Use the Translation Memory Service
-    # We check cache first, if not found, it runs 'call_ai_generation', stores it, and returns.
     try:
-        # We manually check if it was cached to return the 'cached' flag for UI debugging
-        # (The service abstraction hides this, but we can infer or modify service to return metadata)
-        # For simplicity here, we trust the service to do the job.
-        
         result = await tm_service.get_or_compute(
             text=req.text,
             target_lang=req.target_lang,
             ai_callback=call_ai_generation
         )
-        
-        # Note: Ideally TM service returns metadata to know if it was a HIT or MISS.
-        # Assuming HIT for now if latency is low, but for API spec we just return result.
         return {"translated_text": result, "cached": False} 
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Serve Static Files (React Build) ---
+# This allows FastAPI to serve the frontend in Desktop mode without Nginx
+dist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dist")
+
+if os.path.exists(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+else:
+    # Fallback for dev mode if dist doesn't exist yet
+    @app.get("/")
+    def read_root_index():
+        return {"message": "Frontend not built. Run 'npm run build' first."}

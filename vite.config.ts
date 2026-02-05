@@ -4,14 +4,19 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true,
     port: 3000,
+    // Geliştirme ortamı (npm run dev) için proxy.
+    // Docker ortamında Nginx bu işi yapar, burası etkilemez.
     proxy: {
       '/api': {
-        target: 'http://api:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
       }
     }
+  },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: false
   }
 });

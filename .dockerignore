@@ -1,0 +1,14 @@
+node_modules
+dist
+release
+.git
+.gitignore
+.env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+Thumbs.db
+certs
+electron

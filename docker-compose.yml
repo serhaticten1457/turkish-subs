@@ -27,6 +27,7 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # API Key'i buraya environment variable olarak ekleyebilirsin veya arayüzden girebilirsin
     depends_on:
       - redis
     networks:
@@ -50,7 +51,7 @@ networks:
 volumes:
   redis_data:
 
-# CasaOS App Store Metadata
+# CasaOS Metadata (App Store Görünümü İçin)
 x-casaos:
   architectures:
     - amd64
